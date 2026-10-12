@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vectorize — Image tester</title>
+<style>
+[hidden]{display:none!important}:root{font-family:system-ui,sans-serif;color:#172033;background:#f3f5f8}body{max-width:1240px;margin:0 auto;padding:28px}h1{font-size:27px;margin:0 0 6px}p{color:#526072}header{margin-bottom:24px}.controls{display:flex;gap:16px;flex-wrap:wrap;align-items:end;background:white;padding:20px;border-radius:12px;border:1px solid #dde3eb}label{display:grid;gap:6px;font-size:13px;font-weight:600}input,select,button{font:inherit;border:1px solid #c5cedc;padding:10px;border-radius:7px;background:white}input[type=range]{width:140px;padding:0}button,.download{background:#225dc0;color:white;border:0;font-weight:600;cursor:pointer;padding:12px 18px;border-radius:7px}button:disabled{opacity:.5;cursor:wait}.download{text-decoration:none;display:inline-block}.panes{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:22px 0}.pane{background:white;border:1px solid #dde3eb;border-radius:12px;overflow:hidden}.caption{padding:12px 16px;font-weight:600;border-bottom:1px solid #dde3eb}.image{height:400px;display:flex;align-items:center;justify-content:center;background:repeating-conic-gradient(#e8ecf0 0% 25%,#fff 0% 50%) 0/24px 24px}.image img{max-width:100%;max-height:100%;object-fit:contain}.image span{color:#526072;padding:30px}#status{min-height:24px;margin-top:18px}.error{color:#b52828}details{margin-top:18px}pre{white-space:pre-wrap;font-size:12px}small{font-weight:400;color:#526072}footer{margin-top:22px;font-size:13px;color:#526072}a{color:#225dc0}@media(max-width:760px){.panes{grid-template-columns:1fr}.image{height:320px}body{padding:16px}}
+</style></head><body>
+<header><h1>Image to vector</h1><p>Upload artwork or a photograph, compare the result, and download an editable SVG.</p></header>
+<form id="form" class="controls">
+<label>Image<input id="file" type="file" accept="image/png,image/jpeg,image/webp" required></label>
+<label>Mode<select id="preset"><option value="artwork">Artwork</option><option value="photo">Photograph</option></select></label>
+<label>Colors<select id="colors"><option value="0">Auto colors</option><option>8</option><option>16</option><option>24</option><option>32</option><option>48</option><option>64</option></select></label>
+<label>Detail <output id="detailValue">0.80</output><input id="detail" type="range" min="0" max="1" step="0.05" value="0.8"></label>
+<label>Background<select id="background"><option value="transparent">Preserve transparency</option><option value="white">White</option></select></label>
+<label>API key <small>if configured</small><input id="key" type="password" autocomplete="off" placeholder="Optional"></label>
+<button id="submit" type="submit">Convert image</button>
+</form>
+<div id="status" role="status" aria-live="polite">Ready. Auto colors is recommended for photographs.</div>
+<div class="panes"><section class="pane"><div class="caption">Original image</div><div id="original" class="image"><span>Select an image to begin</span></div></section><section class="pane"><div class="caption">Vector result</div><div id="result" class="image"><span>Your SVG preview appears here</span></div></section></div>
+<a id="download" class="download" hidden>Download SVG</a>
+<details id="measurements" hidden><summary>Conversion measurements</summary><pre id="metadata"></pre></details>
+<footer>Processing stays on this local server. Photographs use solid-color vector regions. <a href="/docs">API documentation</a></footer>
+<script>
+const $=id=>document.getElementById(id);let originalURL=null,resultURL=null;
+$('detail').oninput=()=>{$('detailValue').value=Number($('detail').value).toFixed(2)};
+$('file').onchange=()=>{const f=$('file').files[0];if(!f)return;if(originalURL)URL.revokeObjectURL(originalURL);originalURL=URL.createObjectURL(f);const img=new Image();img.alt='Uploaded original';img.src=originalURL;$('original').replaceChildren(img)};
+$('form').onsubmit=async event=>{
+event.preventDefault();const f=$('file').files[0];if(!f)return;const button=$('submit');button.disabled=true;$('status').className='';$('download').hidden=true;$('measurements').hidden=true;const started=Date.now();
+const headers={};if($('key').value)headers['X-API-Key']=$('key').value;
+try{const payload=new FormData();payload.append('image',f);for(const key of ['preset','colors','detail','background'])payload.append(key,$(key).value);
+$('status').textContent='Uploading image…';const response=await fetch('/v1/jobs',{method:'POST',body:payload,headers});const job=await response.json();if(!response.ok)throw Error(typeof job.detail==='string'?job.detail:JSON.stringify(job.detail));
+let state=job;while(!['complete','failed'].includes(state.status)){$('status').textContent=(state.status==='queued'?'Waiting for a worker':'Converting image')+' · '+((Date.now()-started)/1000).toFixed(1)+' seconds';await new Promise(r=>setTimeout(r,400));const poll=await fetch(job.status_url,{headers});state=await poll.json();if(!poll.ok)throw Error(state.detail||'Could not read job')}
+if(state.status==='failed')throw Error(state.error||'Conversion failed');const svg=await fetch(state.result_url,{headers});if(!svg.ok)throw Error('Could not download SVG');const blob=await svg.blob();if(resultURL)URL.revokeObjectURL(resultURL);resultURL=URL.createObjectURL(blob);const img=new Image();img.alt='Converted vector preview';img.src=resultURL;$('result').replaceChildren(img);$('download').href=resultURL;$('download').download=f.name.replace(/\.[^.]+$/,'')+'.svg';$('download').hidden=false;$('metadata').textContent=JSON.stringify(state.metadata,null,2);$('measurements').hidden=false;$('status').textContent='Finished · '+((Date.now()-started)/1000).toFixed(1)+' seconds · '+state.metadata.colors+' colors · '+state.metadata.curves+' curves';
+}catch(error){$('status').className='error';$('status').textContent=error.message||String(error)}finally{button.disabled=false}};
+</script></body></html>

@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    env:
+      OPENBLAS_NUM_THREADS: "1"
+      OMP_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Build native extensions and install development tools
+        run: python -m pip install -e '.[dev]'
+      - name: Tests and coverage
+        run: pytest --cov=vector_server --cov-report=term-missing --cov-fail-under=90
+      - name: Static checks
+        run: |
+          mypy --strict src
+          ruff check src tests setup.py
+          black --check src tests setup.py

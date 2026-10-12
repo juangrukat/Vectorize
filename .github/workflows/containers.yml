@@ -1,0 +1,63 @@
+name: Release Docker images
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to attach images to
+        required: true
+        default: v0.2.0
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    name: Linux ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.release_tag }}
+      - name: Validate release version
+        shell: bash
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+          printf 'VERSION=%s\n' "$VERSION" >> "$GITHUB_ENV"
+      - name: Build Docker image
+        run: docker build --pull -t "vectorize:$VERSION" .
+      - name: Smoke test as non-root
+        shell: bash
+        run: |
+          docker run -d --name smoke -p 127.0.0.1:8000:8000 -v vectorize-test:/data "vectorize:$VERSION"
+          trap 'docker logs smoke; docker rm -f smoke; docker volume rm vectorize-test' EXIT
+          for attempt in {1..30}; do
+            if curl -fsS http://127.0.0.1:8000/ready; then break; fi
+            sleep 1
+          done
+          test "$(docker exec smoke id -u)" = "10001"
+          curl -fsS -F image=@examples/artwork.png -F colors=4 http://127.0.0.1:8000/v1/vectorize -o /tmp/result.svg
+          grep -q '<path' /tmp/result.svg
+      - name: Export and publish image
+        shell: bash
+        run: |
+          ASSET="Vectorize-linux-${{ matrix.arch }}.tar.gz"
+          docker save "vectorize:$VERSION" | gzip > "$ASSET"
+          sha256sum "$ASSET" > "$ASSET.sha256"
+          gh release upload "$RELEASE_TAG" "$ASSET" "$ASSET.sha256" --repo "$GITHUB_REPOSITORY" --clobber

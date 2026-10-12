@@ -1,0 +1,25 @@
+services:
+  vectorize:
+    build: .
+    image: vectorize:0.2.0
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      VECTOR_WORKERS: "2"
+      VECTOR_MAX_DIMENSION: "512"
+      VECTOR_MAX_ITERATIONS: "30"
+      VECTOR_JOB_TIMEOUT_SECONDS: "120"
+      VECTOR_API_KEY: "${VECTOR_API_KEY:-}"
+    volumes:
+      - vector-data:/data
+    init: true
+    restart: unless-stopped
+    mem_limit: 2g
+    cpus: 2.0
+    pids_limit: 64
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+volumes:
+  vector-data:

@@ -1,0 +1,3 @@
+include requirements.lock Dockerfile compose.yaml README.md LICENSE CONTRIBUTING.md
+recursive-include native *.cpp
+recursive-include tests *.py
