@@ -54,6 +54,9 @@ jobs:
           test "$(docker exec smoke id -u)" = "10001"
           curl -fsS -F image=@examples/artwork.png -F colors=4 http://127.0.0.1:8000/v1/vectorize -o /tmp/result.svg
           grep -q '<path' /tmp/result.svg
+          curl -fsS -D /tmp/photo.headers -F image=@examples/photo.png -F preset=photo -F colors=0 -F detail=0.8 http://127.0.0.1:8000/v1/vectorize -o /tmp/photo.svg
+          grep -q '<path' /tmp/photo.svg
+          grep -q 'regional_ward' /tmp/photo.headers
       - name: Export and publish image
         shell: bash
         run: |
