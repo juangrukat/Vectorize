@@ -32,21 +32,26 @@ def _decode(
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
-            image = Image.open(io.BytesIO(data))
+            image: Image.Image = Image.open(io.BytesIO(data))
             if image.format not in {"PNG", "JPEG", "WEBP"}:
                 raise VectorizationError("Only PNG, JPEG and WebP images are supported")
             if image.width * image.height > limits.max_pixels:
                 raise VectorizationError("Decoded image exceeds pixel limit")
-            image = ImageOps.exif_transpose(image)
+            oriented = ImageOps.exif_transpose(image)
+            if oriented is not None:
+                image = oriented
             profile = image.info.get("icc_profile")
             if profile:
                 try:
-                    image = ImageCms.profileToProfile(
+                    converted = ImageCms.profileToProfile(
                         image,
                         ImageCms.ImageCmsProfile(io.BytesIO(profile)),
                         ImageCms.createProfile("sRGB"),
                         outputMode="RGBA",
                     )
+                    if converted is None:
+                        raise VectorizationError("Color profile conversion failed")
+                    image = converted
                 except (OSError, ValueError, ImageCms.PyCMSError) as exc:
                     raise VectorizationError(
                         "Unsupported or invalid ICC color profile"
